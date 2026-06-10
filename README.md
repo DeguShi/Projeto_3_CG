@@ -11,8 +11,7 @@ Claro, dadas as limitações do projeto e a baixa diversidade de modelos gratuit
 
 Adicionamos também muitos outros objetos. O objetivo não era fazer o mínimo entregavel, mas sim construir um ambiente coerente e que fosse interessante de explorar.
 
-O Projeto 3 adiciona iluminação Phong completa: 3 fontes de luz com separação indoor/outdoor, normais por face, parâmetros de material por objeto e controles interativos de iluminação.
-
+O Projeto 3 continua o Projeto 2 e adiciona iluminação ambiente, difusa e especular com três fontes de luz, separação entre ambiente interno e externo, parâmetros de material definidos manualmente e mapa de sombras para a luz externa.
 
 ## DEMO
 
@@ -46,7 +45,9 @@ main.ipynb
 - `Q` e `E`: girar a cadeira interna.
 - `Z` e `X`: mudar o tamanho do guarda-sol.
 - `Scroll`: mudar o zoom.
-- `P`: alternar malha (wireframe).
+- `P`: alternar malha.
+- `F`: alternar tela cheia.
+- `L`: mostrar/esconder marcadores das fontes de luz.
 - `ESC`: sair.
 
 ### Iluminação (Projeto 3)
@@ -78,7 +79,7 @@ assets/                  modelos e texturas usados
 | 3   | Interna | laranja-quente    | acima do abajur                      |
 | 4   | Interna | branco-azulado    | centro do teto                       |
 
-A separação indoor/outdoor garante que luzes internas não afetam objetos externos e vice-versa.
+A separação entre ambiente interno e externo garante que luzes internas não afetam objetos externos e vice-versa.
 
 ## Modelos da cena
 

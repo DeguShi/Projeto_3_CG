@@ -4,18 +4,18 @@ SCC0250 - Computação Gráfica - Projeto 3
 Felipe Azambuja - 14675437
 Luiz Fellipe Catuzzi Araujo Hotoshi - 11871198
 
-
 Nós tentamos fazer uma ilha e uma casa que remetessem a sensação de tranquilidade com que o Mestre Kame (DB) vivia.
-Claro, dadas as limitações do projeto e a baixa diversidade de modelos gratuitos com textura disponíveis para essa construção,
-fizemos mudanças cabíveis, mas mantivemos a essência. No lugar das revistas que o Kame costumava ler, adicionamos outra forma de
-entretenimento, um notebook com segundo monitor e uma cadeira ergonomica para garantir a gameplay. Porém, assim como no anime, o maior
-lazer é ficar em uma cadeira de praia do lado de fora, aproveitando a vista para o mar sob a sombra de um guarda sol (e uma garrafinha de água, para ficar hidratado).
 
-Adicionamos também muitos outros objetos. O objetivo não era fazer o mínimo entregavel, mas sim construir um ambiente coerente e que
-fosse interessante de explorar.
+Claro, dadas as limitações do projeto e a baixa diversidade de modelos gratuitos com textura disponíveis para essa construção, 
+fizemos mudanças cabíveis, mas mantivemos a essência. No lugar das revistas que o Kame costumava ler, adicionamos outra forma de 
+entretenimento, um notebook com segundo monitor e uma cadeira ergonomica para garantir a gameplay. Porém, assim como no anime, 
+o maior lazer é ficar em uma cadeira de praia do lado de fora, 
+aproveitando a vista para o mar sob a sombra de um guarda sol (e uma garrafinha de água, para ficar hidratado).
+Adicionamos também muitos outros objetos. O objetivo não era fazer o mínimo entregavel, mas sim construir um ambiente coerente 
+e que fosse interessante de explorar.
 
-O Projeto 3 adiciona iluminação Phong completa: 3 fontes de luz com separação indoor/outdoor, normais por face por fragmento,
-parâmetros de material (ka, kd, ks, shininess) definidos manualmente por objeto e controles interativos de iluminação.
+O Projeto 3 continua o Projeto 2 e adiciona iluminação ambiente, difusa e especular com três fontes de luz, separação entre ambiente 
+interno e externo, parâmetros de material definidos manualmente e mapa de sombras para a luz externa.
 
 Controles:
   WASD e mouse: mover a câmera
@@ -25,7 +25,9 @@ Controles:
   Q e E: girar a cadeira interna
   Z e X: mudar o tamanho do guarda-sol
   Scroll: mudar o zoom
-  P: alternar malha (wireframe)
+  P: alternar malha
+  F: alternar tela cheia
+  L: mostrar/esconder marcadores das fontes de luz
   ESC: sair
 
 Iluminação (Projeto 3):
@@ -143,6 +145,12 @@ WIN_W, WIN_H = 1280, 720
 SKYBOX_HALF  = 48.0
 CAM_SPEED    = 8.0
 MOUSE_SENS   = 0.15
+SHADOW_SIZE  = 2048
+SHADOW_ORTHO_HALF = 18.0
+SHADOW_DISTANCE   = 45.0
+SHADOW_NEAR       = 1.0
+SHADOW_FAR        = 90.0
+SHADOW_BIAS       = 0.0035
 
 ROOM_SCALE = 1.5
 ROOM_TX    = -3.0
@@ -177,29 +185,24 @@ texcoords_list: list = []
 normals_list:   list = []
 
 # ---------------------------------------------------------------------------
-# Lighting state
+# Iluminação
 # ---------------------------------------------------------------------------
 INDOOR  = 0
 OUTDOOR = 1
+BOUNDARY = 2
 
 ambient_enabled:  int   = 1
-light_enabled:    list  = [1, 1, 1]   # [outdoor, abajur, ceiling]
+light_enabled:    list  = [1, 1, 1]   # luz externa, abajur, teto
 ambient_strength: float = 0.5
-ambient_color:    list  = [1.0, 0.96, 0.88]   # warm daylight white — sky environment tint
+ambient_color:    list  = [1.0, 0.96, 0.88]
 diffuse_mult:     float = 1.0
 specular_mult:    float = 1.0
 
-# Sandbox / light tuning mode  (F1 to toggle, F5 to save)
-sandbox_mode:  bool = False
-sandbox_light: int  = 0   # 0=outdoor, 1=abajur, 2=ceiling
-
-# Mutable light positions  (loaded from lighting_config.json if present)
-outdoor_offset:        list = [0.0, 3.0, -60.0]        # sunset sun: 180 deg from the door-facing reference
+outdoor_offset:        list = [0.0, 3.0, -60.0]
 abajur_pos:            list = [2.4, 1.85, 2.4]
-ceiling_pos:           list = [0.0, ROOM_CEIL_Y - 0.20, 0.0]  # centre of ceiling quad
-light_intensities_cfg:  list  = [1.0, 0.8, 0.6]      # [outdoor, abajur, ceiling]
-sky_brightness:         float = 1.5                   # emissiveMult for the sky sphere
-sandbox_marker_scale:   float = 0.14                  # edge length of sandbox light cubes
+ceiling_pos:           list = [0.0, ROOM_CEIL_Y - 0.20, 0.0]
+light_intensities_cfg:  list  = [1.0, 0.8, 0.6]
+sky_brightness:         float = 1.5
 
 # ---------------------------------------------------------------------------
 # Câmera
@@ -216,6 +219,10 @@ last_y       = WIN_H / 2.0
 delta_time   = 0.0
 last_frame   = 0.0
 wireframe    = False
+show_light_markers = False
+fullscreen_enabled = False
+windowed_pos = (100, 100)
+windowed_size = (WIN_W, WIN_H)
 
 @dataclass
 class MatConfig:
@@ -241,7 +248,7 @@ class ObjState:
     angle_x: float = 0.0
     scale:   float = 1.0
     parts: list = field(default_factory=list)
-    # Lighting / material
+    # Iluminação e material
     zone:      int   = OUTDOOR
     ka:        float = 0.25
     kd:        float = 0.75
@@ -336,7 +343,7 @@ objects: list[ObjState] = [
              scale=0.008114301686507872),
 ]
 
-# (zone, ka, kd, ks, shininess)  — set manually, not from .mtl
+# Parâmetros definidos manualmente, sem usar valores de arquivos .mtl.
 _OBJ_MAT: dict[str, tuple] = {
     "Cama":            (INDOOR,  0.25, 0.85, 0.08,   8.0),
     "Tapete":          (INDOOR,  0.25, 0.90, 0.04,   6.0),
@@ -720,7 +727,6 @@ def load_obj(obj_path: str, tex_path: str) -> tuple[int, int, int]:
 
 def _append_quad(corners: list, uvs: list) -> tuple[int, int]:
     start = len(vertices_list)
-    # Winding (0,2,1),(0,3,2) gives +y for floor, -y for ceiling (correct for Phong).
     for tri_idx in ((0, 2, 1), (0, 3, 2)):
         raw = [corners[i] for i in tri_idx]
         nx, ny, nz = _face_normal(raw)
@@ -770,7 +776,6 @@ def build_circle_floor(cx: float, cz: float, radius: float, y: float,
     for i in range(segments):
         next_i = (i + 1) % segments
 
-        # Winding swapped (next_i before i) so normal faces +y (upward).
         tri_pts = [(cx, y, cz), points[next_i], points[i]]
         nx, ny, nz = _face_normal(tri_pts)
         n_str = [str(nx), str(ny), str(nz)]
@@ -824,7 +829,6 @@ def build_ring_slope(cx: float, cz: float, r_inner: float, r_outer: float,
         u1o, v1o = u1, v_outer
         u2o, v2o = u2, v_outer
         
-        # Winding: outer-first gives normals facing outward+upward.
         t1 = [(px1o, y_outer, pz1o), (px1i, y_inner, pz1i), (px2i, y_inner, pz2i)]
         t2 = [(px1o, y_outer, pz1o), (px2i, y_inner, pz2i), (px2o, y_outer, pz2o)]
         n1x, n1y, n1z = _face_normal(t1)
@@ -899,7 +903,6 @@ def build_rounded_slope(cx: float, cz: float, r_inner: float, r_outer: float,
             u1o, v1o = u1, v_end
             u2o, v2o = u2, v_end
             
-            # Winding: outer-first gives normals facing outward.
             ta = [(px1o, y2, pz1o), (px1i, y1, pz1i), (px2i, y1, pz2i)]
             tb = [(px1o, y2, pz1o), (px2i, y1, pz2i), (px2o, y2, pz2o)]
             nax, nay, naz = _face_normal(ta)
@@ -967,19 +970,18 @@ def build_skysphere_geometry(radius: float, lat_bands: int = 40, long_bands: int
             normals_list.extend([_zero_n, _zero_n, _zero_n])
             texcoords_list.extend([sphere_uvs[second], sphere_uvs[second + 1], sphere_uvs[first + 1]])
             tri_count += 3
-            
     return start, tri_count
 
+
 def build_unit_cube() -> tuple[int, int]:
-    """Cubo unitário centrado na origem — usado como marcador de fonte de luz."""
     h = 0.5
     faces = [
-        [(-h,-h,-h),( h,-h,-h),( h,-h, h),(-h,-h, h)],  # bottom
-        [(-h, h,-h),(-h, h, h),( h, h, h),( h, h,-h)],  # top
-        [(-h,-h, h),( h,-h, h),( h, h, h),(-h, h, h)],  # front
-        [( h,-h,-h),(-h,-h,-h),(-h, h,-h),( h, h,-h)],  # back
-        [(-h,-h,-h),(-h,-h, h),(-h, h, h),(-h, h,-h)],  # left
-        [( h,-h, h),( h,-h,-h),( h, h,-h),( h, h, h)],  # right
+        [(-h,-h,-h),( h,-h,-h),( h,-h, h),(-h,-h, h)],
+        [(-h, h,-h),(-h, h, h),( h, h, h),( h, h,-h)],
+        [(-h,-h, h),( h,-h, h),( h, h, h),(-h, h, h)],
+        [( h,-h,-h),(-h,-h,-h),(-h, h,-h),( h, h,-h)],
+        [(-h,-h,-h),(-h,-h, h),(-h, h, h),(-h, h,-h)],
+        [( h,-h, h),( h,-h,-h),( h, h,-h),( h, h, h)],
     ]
     start = len(vertices_list)
     for face in faces:
@@ -1057,12 +1059,54 @@ def mat_view() -> np.ndarray:
     return np.array(glm.lookAt(camera_pos, camera_pos + camera_front, camera_up))
 
 
-def mat_proj() -> np.ndarray:
-    return np.array(glm.perspective(glm.radians(fov), WIN_W / WIN_H, 0.1, 200.0))
+def mat_proj(width: int, height: int) -> np.ndarray:
+    aspect = max(1, width) / max(1, height)
+    return np.array(glm.perspective(glm.radians(fov), aspect, 0.1, 200.0))
+
+
+def mat_light_space(light_pos: np.ndarray) -> np.ndarray:
+    scene_center = glm.vec3(0.0, 1.0, 1.5)
+    sun_pos = glm.vec3(float(light_pos[0]), float(light_pos[1]), float(light_pos[2]))
+    light_dir = glm.normalize(scene_center - sun_pos)
+    shadow_cam = scene_center - light_dir * SHADOW_DISTANCE
+    light_view = glm.lookAt(shadow_cam, scene_center, glm.vec3(0.0, 1.0, 0.0))
+    light_proj = glm.ortho(-SHADOW_ORTHO_HALF, SHADOW_ORTHO_HALF,
+                           -SHADOW_ORTHO_HALF, SHADOW_ORTHO_HALF,
+                           SHADOW_NEAR, SHADOW_FAR)
+    return np.array(light_proj * light_view)
 
 # ---------------------------------------------------------------------------
 # Desenho
 # ---------------------------------------------------------------------------
+
+
+def create_shadow_map() -> tuple[int, int]:
+    depth_tex = glGenTextures(1)
+    glBindTexture(GL_TEXTURE_2D, depth_tex)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+                 SHADOW_SIZE, SHADOW_SIZE, 0,
+                 GL_DEPTH_COMPONENT, GL_FLOAT, None)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+
+    fbo = glGenFramebuffers(1)
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo)
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                           GL_TEXTURE_2D, depth_tex, 0)
+    glDrawBuffer(GL_NONE)
+    glReadBuffer(GL_NONE)
+    if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE:
+        raise RuntimeError("Framebuffer do mapa de sombras incompleto")
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    return fbo, depth_tex
+
+
+def draw_depth(program: int, model: np.ndarray, start: int, count: int) -> None:
+    glUniformMatrix4fv(glGetUniformLocation(program, "model"), 1, GL_TRUE, model)
+    glDrawArrays(GL_TRIANGLES, start, count)
+
 
 def draw(program: int, tex_id: int, start: int, count: int,
          model: np.ndarray,
@@ -1088,6 +1132,7 @@ def draw(program: int, tex_id: int, start: int, count: int,
         glUniform4f(glGetUniformLocation(program, "flat_color"), 1.0, 0.8, 0.2, 1.0)
     elif use_tex:
         glUniform1i(glGetUniformLocation(program, "use_texture"), 1)
+        glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, tex_id)
     else:
         glUniform1i(glGetUniformLocation(program, "use_texture"), 0)
@@ -1099,11 +1144,35 @@ def draw(program: int, tex_id: int, start: int, count: int,
 # ---------------------------------------------------------------------------
 
 
+def toggle_fullscreen(window) -> None:
+    global fullscreen_enabled, windowed_pos, windowed_size
+
+    if fullscreen_enabled:
+        glfw.set_window_monitor(window, None,
+                                windowed_pos[0], windowed_pos[1],
+                                windowed_size[0], windowed_size[1], 0)
+        fullscreen_enabled = False
+        return
+
+    monitor = glfw.get_primary_monitor()
+    mode = glfw.get_video_mode(monitor)
+    if monitor is None or mode is None:
+        return
+    windowed_pos = glfw.get_window_pos(window)
+    windowed_size = glfw.get_window_size(window)
+    try:
+        width, height = mode.size
+    except TypeError:
+        width, height = mode.size.width, mode.size.height
+    glfw.set_window_monitor(window, monitor, 0, 0,
+                            width, height, mode.refresh_rate)
+    fullscreen_enabled = True
+
+
 def key_event(window, key, scancode, action, mods) -> None:
-    global wireframe
+    global wireframe, show_light_markers
     global camera_pos, yaw, pitch
     global ambient_enabled, light_enabled, ambient_strength, diffuse_mult, specular_mult
-    global sandbox_mode, sandbox_light, sky_brightness, sandbox_marker_scale
 
     if key == glfw.KEY_ESCAPE and action == glfw.PRESS:
         glfw.set_window_should_close(window, True)
@@ -1117,70 +1186,20 @@ def key_event(window, key, scancode, action, mods) -> None:
         wireframe = not wireframe
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE if wireframe else GL_FILL)
 
-    # F1: toggle sandbox mode
-    if key == glfw.KEY_F1 and action == glfw.PRESS:
-        sandbox_mode = not sandbox_mode
-        print(f"[SANDBOX] {'ON' if sandbox_mode else 'OFF'}  "
-              f"Tab=cycle  Arrows=X/Z  PgUp/Dn=Y  +/-=intensity  F5=save",
-              flush=True)
-        if sandbox_mode:
-            _sandbox_print()
+    if key == glfw.KEY_F and action == glfw.PRESS:
+        toggle_fullscreen(window)
 
-    # F5: save lighting config
-    if key == glfw.KEY_F5 and action == glfw.PRESS:
-        save_lighting_config()
+    if key == glfw.KEY_L and action == glfw.PRESS:
+        show_light_markers = not show_light_markers
 
-    # Sandbox light editing (active while sandbox_mode is on)
-    if sandbox_mode:
-        if key == glfw.KEY_TAB and action == glfw.PRESS:
-            sandbox_light = (sandbox_light + 1) % 3
-            _sandbox_print()
-
-        if repeat:
-            mvs = 0.2 * (3.0 if shift else 1.0)
-            its = 0.05 * (3.0 if shift else 1.0)
-            pos = [outdoor_offset, abajur_pos, ceiling_pos][sandbox_light]
-            changed = False
-            if key == glfw.KEY_LEFT:      pos[0] -= mvs; changed = True
-            if key == glfw.KEY_RIGHT:     pos[0] += mvs; changed = True
-            if key == glfw.KEY_UP:        pos[2] -= mvs; changed = True
-            if key == glfw.KEY_DOWN:      pos[2] += mvs; changed = True
-            if key == glfw.KEY_PAGE_UP:   pos[1] += mvs; changed = True
-            if key == glfw.KEY_PAGE_DOWN: pos[1] -= mvs; changed = True
-            if key == glfw.KEY_EQUAL:     # + key (no shift needed)
-                light_intensities_cfg[sandbox_light] = max(0.0, light_intensities_cfg[sandbox_light] + its)
-                changed = True
-            if key == glfw.KEY_MINUS:
-                light_intensities_cfg[sandbox_light] = max(0.0, light_intensities_cfg[sandbox_light] - its)
-                changed = True
-            # Sky brightness: [ and ] keys
-            if key == glfw.KEY_LEFT_BRACKET:
-                sky_brightness = max(0.1, sky_brightness - 0.1)
-                print(f"[SANDBOX] sky_brightness={sky_brightness:.2f}", flush=True)
-            if key == glfw.KEY_RIGHT_BRACKET:
-                sky_brightness = min(5.0, sky_brightness + 0.1)
-                print(f"[SANDBOX] sky_brightness={sky_brightness:.2f}", flush=True)
-            # Marker cube size: V (shrink) / B (grow)
-            if key == glfw.KEY_V:
-                sandbox_marker_scale = max(0.02, sandbox_marker_scale - 0.02)
-                print(f"[SANDBOX] marker_scale={sandbox_marker_scale:.3f}", flush=True)
-            if key == glfw.KEY_B:
-                sandbox_marker_scale = min(2.0, sandbox_marker_scale + 0.02)
-                print(f"[SANDBOX] marker_scale={sandbox_marker_scale:.3f}", flush=True)
-            if changed:
-                _sandbox_print()
-        # In sandbox mode, arrows are consumed by light editing — skip scene controls below
-        if key in (glfw.KEY_LEFT, glfw.KEY_RIGHT, glfw.KEY_UP, glfw.KEY_DOWN):
-            return
-
-    # Light toggles (PRESS only)
+    # Liga e desliga as luzes.
     if action == glfw.PRESS:
         if key == glfw.KEY_1: ambient_enabled        = 1 - ambient_enabled
         if key == glfw.KEY_2: light_enabled[0]       = 1 - light_enabled[0]
         if key == glfw.KEY_3: light_enabled[1]       = 1 - light_enabled[1]
         if key == glfw.KEY_4: light_enabled[2]       = 1 - light_enabled[2]
 
-    # Intensity sliders (PRESS + REPEAT for hold)
+    # Ajustes contínuos de intensidade.
     if repeat:
         step = 0.05 * (3.0 if shift else 1.0)
         if key == glfw.KEY_J: ambient_strength = max(0.0, min(1.0, ambient_strength - step))
@@ -1253,7 +1272,7 @@ def scroll_callback(window, xoff: float, yoff: float) -> None:
     fov = max(1.0, min(90.0, fov - yoff))
 
 # ---------------------------------------------------------------------------
-# Lighting config persistence
+# Configuração de iluminação
 # ---------------------------------------------------------------------------
 
 _CONFIG_PATH = os.path.join(BASE, "lighting_config.json")
@@ -1261,7 +1280,7 @@ _CONFIG_PATH = os.path.join(BASE, "lighting_config.json")
 def load_lighting_config() -> None:
     global ambient_strength, ambient_color, diffuse_mult, specular_mult
     global outdoor_offset, abajur_pos, ceiling_pos, light_intensities_cfg
-    global sky_brightness, sandbox_marker_scale
+    global sky_brightness
     if not os.path.exists(_CONFIG_PATH):
         return
     with open(_CONFIG_PATH) as f:
@@ -1275,39 +1294,11 @@ def load_lighting_config() -> None:
     ceiling_pos           = cfg.get("ceiling_pos",         ceiling_pos)
     light_intensities_cfg = cfg.get("light_intensities",   light_intensities_cfg)
     sky_brightness        = cfg.get("sky_brightness",      sky_brightness)
-    sandbox_marker_scale  = cfg.get("sandbox_marker_scale",sandbox_marker_scale)
-    print(f"Loaded {_CONFIG_PATH}", flush=True)
-
-
-def save_lighting_config() -> None:
-    cfg = {
-        "ambient_strength":  ambient_strength,
-        "ambient_color":     ambient_color,
-        "diffuse_mult":      diffuse_mult,
-        "specular_mult":     specular_mult,
-        "outdoor_offset":    outdoor_offset,
-        "abajur_pos":        abajur_pos,
-        "ceiling_pos":       ceiling_pos,
-        "light_intensities":    light_intensities_cfg,
-        "sky_brightness":       sky_brightness,
-        "sandbox_marker_scale": sandbox_marker_scale,
-    }
-    with open(_CONFIG_PATH, "w") as f:
-        json.dump(cfg, f, indent=2)
-    print(f"Saved {_CONFIG_PATH}", flush=True)
-
-
-def _sandbox_print() -> None:
-    names = ["outdoor(offset)", "abajur", "ceiling"]
-    positions = [outdoor_offset, abajur_pos, ceiling_pos]
-    p = [round(v, 3) for v in positions[sandbox_light]]
-    i = round(light_intensities_cfg[sandbox_light], 3)
-    print(f"[SANDBOX] light={sandbox_light} {names[sandbox_light]}  pos={p}  intensity={i}",
-          flush=True)
+    print(f"Carregado {_CONFIG_PATH}", flush=True)
 
 
 # ---------------------------------------------------------------------------
-# Shaders
+# Programas de shader
 # ---------------------------------------------------------------------------
 
 def compile_program(vs_path: str, fs_path: str) -> int:
@@ -1326,6 +1317,9 @@ def compile_program(vs_path: str, fs_path: str) -> int:
     prog = glCreateProgram()
     glAttachShader(prog, vs)
     glAttachShader(prog, fs)
+    glBindAttribLocation(prog, 0, "position")
+    glBindAttribLocation(prog, 1, "texture_coord")
+    glBindAttribLocation(prog, 2, "normals")
     glLinkProgram(prog)
     if not glGetProgramiv(prog, GL_LINK_STATUS):
         raise RuntimeError(glGetProgramInfoLog(prog).decode())
@@ -1359,10 +1353,17 @@ def main() -> None:
         os.path.join(BASE, "vertex_shader.vs"),
         os.path.join(BASE, "fragment_shader.fs"),
     )
+    depth_prog = compile_program(
+        os.path.join(BASE, "depth_vertex_shader.vs"),
+        os.path.join(BASE, "depth_fragment_shader.fs"),
+    )
     glUseProgram(prog)
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glUniform1i(glGetUniformLocation(prog, "samplerTexture"), 0)
+    glUniform1i(glGetUniformLocation(prog, "shadowMap"), 1)
+    shadow_fbo, shadow_tex = create_shadow_map()
 
     print("Preparando céu", flush=True)
     sky_tid = get_texture(SKY_PANO)
@@ -1435,21 +1436,11 @@ def main() -> None:
     ceil_tid = get_texture(CEILING_TEX)
 
     sky_start, sky_count = build_skysphere_geometry(SKYBOX_HALF)
-
-    # Unit cube for sandbox light markers (built once, repositioned per frame via model matrix)
     cube_s, cube_n = build_unit_cube()
 
     print("Enviando dados para GPU", flush=True)
     upload_to_gpu(prog)
 
-    # Marker colors match each light's color (rgba)
-    _marker_colors = [
-        (1.00, 0.80, 0.35, 1.0),   # outdoor — warm yellow-orange
-        (1.00, 0.85, 0.45, 1.0),   # abajur  — warm orange-yellow
-        (0.80, 0.90, 1.00, 1.0),   # ceiling — cool white-blue
-    ]
-
-    # Pre-cache uniform locations
     loc_view           = glGetUniformLocation(prog, "view")
     loc_proj           = glGetUniformLocation(prog, "projection")
     loc_light_pos      = glGetUniformLocation(prog, "lightPos")
@@ -1463,19 +1454,60 @@ def main() -> None:
     loc_specular_mult  = glGetUniformLocation(prog, "specularMult")
     loc_view_pos       = glGetUniformLocation(prog, "viewPos")
     loc_ambient_color  = glGetUniformLocation(prog, "ambientColor")
+    loc_light_space    = glGetUniformLocation(prog, "lightSpaceMatrix")
+    loc_shadow_enabled = glGetUniformLocation(prog, "shadowEnabled")
+    loc_shadow_bias    = glGetUniformLocation(prog, "shadowBias")
+    loc_shadow_texel   = glGetUniformLocation(prog, "shadowTexelSize")
+    loc_depth_light_space = glGetUniformLocation(depth_prog, "lightSpaceMatrix")
 
-    # Static light color + zone (never changes)
     _light_colors = np.array([
-        [1.00, 0.45, 0.05],   # outdoor  — deep orange-red (sunset)
-        [1.00, 0.85, 0.45],   # abajur   — warm orange-yellow
-        [0.80, 0.90, 1.00],   # ceiling  — cool white-blue
+        [1.00, 0.45, 0.05],   # luz externa
+        [1.00, 0.85, 0.45],   # abajur
+        [0.80, 0.90, 1.00],   # teto
     ], dtype=np.float32)
     _light_zones = np.array([OUTDOOR, INDOOR, INDOOR], dtype=np.int32)
+    _marker_colors = [
+        (1.00, 0.80, 0.35, 1.0),
+        (1.00, 0.85, 0.45, 1.0),
+        (0.80, 0.90, 1.00, 1.0),
+    ]
+
+    def draw_shadow_casters() -> None:
+        if room_parts:
+            room_m = mat_model(tx=ROOM_TX, ty=ROOM_TY, tz=ROOM_TZ,
+                               sx=ROOM_SCALE, sy=1.0, sz=ROOM_SCALE)
+            for pstart, pcount, *_rest in room_parts:
+                draw_depth(depth_prog, room_m, pstart, pcount)
+        if door_parts:
+            door_m = mat_room_door_open()
+            for pstart, pcount, *_rest in door_parts:
+                draw_depth(depth_prog, door_m, pstart, pcount)
+
+        draw_depth(depth_prog, mat_model(), wood_s, wood_n)
+        draw_depth(depth_prog, mat_model(), ceil_s, ceil_n)
+
+        for col in range(ROOF_TILE_COLS):
+            tx = (col - (ROOF_TILE_COLS - 1) / 2.0) * ROOF_TILE_SPACING_X
+            for row in range(ROOF_TILE_ROWS):
+                tz = (row - (ROOF_TILE_ROWS - 1) / 2.0) * ROOF_TILE_SPACING_Z
+                tile_m = mat_model(tx=tx, ty=ROOF_TILE_Y, tz=tz)
+                for pstart, pcount, *_rest in roof_tile_parts:
+                    draw_depth(depth_prog, tile_m, pstart, pcount)
+
+        for obj in objects:
+            s = obj.scale
+            m = mat_model(tx=obj.tx, ty=obj.ty, tz=obj.tz,
+                          angle_y=obj.angle_y, angle_x=obj.angle_x,
+                          sx=s, sy=s, sz=s)
+            if obj.parts:
+                for pstart, pcount, *_rest in obj.parts:
+                    draw_depth(depth_prog, m, pstart, pcount)
+            else:
+                draw_depth(depth_prog, m, obj.start, obj.count)
 
     glfw.show_window(window)
     print("Cena pronta", flush=True)
-    print("Iluminação: 1=ambient 2=luz-ext 3=abajur 4=teto | J/K=ambient N/M=difuso U/I=especular", flush=True)
-    print("Sandbox:    F1=toggle  Tab=luz  Setas=X/Z  PgUp/Dn=Y  +/-=intensidade  [/]=céu  F5=salvar", flush=True)
+    print("Iluminação: 1=ambient 2=luz-ext 3=abajur 4=teto | J/K=ambient N/M=difuso U/I=especular | F=tela-cheia L=fontes", flush=True)
 
     while not glfw.window_should_close(window):
         now        = glfw.get_time()
@@ -1486,12 +1518,12 @@ def main() -> None:
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glClearColor(0.52, 0.80, 0.98, 1.0)
 
+        fb_w, fb_h = glfw.get_framebuffer_size(window)
         view = mat_view()
-        proj = mat_proj()
+        proj = mat_proj(fb_w, fb_h)
         glUniformMatrix4fv(loc_view, 1, GL_TRUE, view)
         glUniformMatrix4fv(loc_proj, 1, GL_TRUE, proj)
 
-        # Outdoor sun — position is beach-chair world pos + outdoor_offset
         bc = objects[BEACH_CHAIR_INDEX]
         outdoor_lpos = np.array([bc.tx + outdoor_offset[0],
                                   bc.ty + outdoor_offset[1],
@@ -1502,8 +1534,26 @@ def main() -> None:
             abajur_pos,
             ceiling_pos,
         ], dtype=np.float32)
+        light_space = mat_light_space(outdoor_lpos)
 
-        # Send per-frame lighting uniforms
+        glUseProgram(depth_prog)
+        glUniformMatrix4fv(loc_depth_light_space, 1, GL_TRUE, light_space)
+        glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE)
+        glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo)
+        glClear(GL_DEPTH_BUFFER_BIT)
+        glDisable(GL_BLEND)
+        if wireframe:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+        draw_shadow_casters()
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+        glViewport(0, 0, fb_w, fb_h)
+        if wireframe:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+        glEnable(GL_BLEND)
+        glUseProgram(prog)
+        glUniformMatrix4fv(loc_view, 1, GL_TRUE, view)
+        glUniformMatrix4fv(loc_proj, 1, GL_TRUE, proj)
+
         glUniform3fv(loc_light_pos,       3, light_positions.flatten())
         glUniform3fv(loc_light_color,     3, _light_colors.flatten())
         glUniform1fv(loc_light_intensity, 3, np.array(light_intensities_cfg, dtype=np.float32))
@@ -1515,15 +1565,22 @@ def main() -> None:
         glUniform1f(loc_specular_mult, specular_mult)
         glUniform3f(loc_view_pos, camera_pos.x, camera_pos.y, camera_pos.z)
         glUniform3f(loc_ambient_color, *ambient_color)
+        glUniformMatrix4fv(loc_light_space, 1, GL_TRUE, light_space)
+        glUniform1i(loc_shadow_enabled, 1)
+        glUniform1f(loc_shadow_bias, SHADOW_BIAS)
+        glUniform2f(loc_shadow_texel, 1.0 / SHADOW_SIZE, 1.0 / SHADOW_SIZE)
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, shadow_tex)
+        glActiveTexture(GL_TEXTURE0)
 
-        # Sky sphere — panorama texture, brightness-boosted via emissiveMult
+        # Céu
         glDepthMask(GL_FALSE)
         sky_m = mat_model(tx=camera_pos.x, ty=camera_pos.y, tz=camera_pos.z)
         draw(prog, sky_tid, sky_start, sky_count, sky_m,
              emissive=True, emissive_mult=sky_brightness)
         glDepthMask(GL_TRUE)
 
-        # Outdoor terrain
+        # Terreno externo
         draw(prog, water_tid, water_s, water_n, mat_model(),
              zone=OUTDOOR, ka=0.30, kd=0.40, ks=0.60, shininess=32.0)
         draw(prog, sand_tid, sand_s, sand_n, mat_model(),
@@ -1531,7 +1588,7 @@ def main() -> None:
         draw(prog, grass_tid, grass_s, grass_n, mat_model(),
              zone=OUTDOOR, ka=0.30, kd=0.80, ks=0.05, shininess=6.0)
 
-        # Indoor room walls / door
+        # Paredes e porta do quarto
         if room_parts:
             room_m = mat_model(tx=ROOM_TX, ty=ROOM_TY, tz=ROOM_TZ,
                                sx=ROOM_SCALE, sy=1.0, sz=ROOM_SCALE)
@@ -1541,18 +1598,18 @@ def main() -> None:
                      zone=pzone, ka=0.30, kd=0.80, ks=0.10, shininess=12.0)
         if door_parts:
             door_m = mat_room_door_open()
-            for pstart, pcount, ptex_id, puse_tex, pcolor, _pdouble, pzone in door_parts:
+            for pstart, pcount, ptex_id, puse_tex, pcolor, _pdouble, _pzone in door_parts:
                 draw(prog, ptex_id, pstart, pcount, door_m,
                      use_tex=puse_tex, color=pcolor,
-                     zone=pzone, ka=0.30, kd=0.80, ks=0.10, shininess=12.0)
+                     zone=BOUNDARY, ka=0.30, kd=0.80, ks=0.10, shininess=12.0)
 
-        # Indoor floor + ceiling
+        # Piso e teto internos
         draw(prog, wood_tid, wood_s, wood_n, mat_model(),
              zone=INDOOR, ka=0.25, kd=0.75, ks=0.25, shininess=24.0)
         draw(prog, ceil_tid, ceil_s, ceil_n, mat_model(),
              zone=INDOOR, ka=0.30, kd=0.80, ks=0.10, shininess=12.0)
 
-        # Roof tiles (outdoor)
+        # Telhas
         for col in range(ROOF_TILE_COLS):
             tx = (col - (ROOF_TILE_COLS - 1) / 2.0) * ROOF_TILE_SPACING_X
             for row in range(ROOF_TILE_ROWS):
@@ -1563,7 +1620,7 @@ def main() -> None:
                          use_tex=puse_tex, color=pcolor,
                          zone=OUTDOOR, ka=0.25, kd=0.50, ks=0.15, shininess=12.0)
 
-        # Scene objects (each carries its own zone + material)
+        # Objetos da cena
         for obj in objects:
             s = obj.scale
             m = mat_model(tx=obj.tx, ty=obj.ty, tz=obj.tz,
@@ -1579,17 +1636,15 @@ def main() -> None:
                 draw(prog, obj.tex_id, obj.start, obj.count, m,
                      use_tex=True, **mat_kw)
 
-        # Sandbox light markers — emissive cubes shown only in sandbox mode
-        if sandbox_mode:
+        if show_light_markers:
             marker_positions = [
                 outdoor_lpos,
-                np.array(abajur_pos,   dtype=np.float32),
-                np.array(ceiling_pos,  dtype=np.float32),
+                np.array(abajur_pos, dtype=np.float32),
+                np.array(ceiling_pos, dtype=np.float32),
             ]
-            for idx, (lpos, lcolor) in enumerate(zip(marker_positions, _marker_colors)):
-                s = sandbox_marker_scale * (1.5 if idx == sandbox_light else 1.0)
+            for lpos, lcolor in zip(marker_positions, _marker_colors):
                 mm = mat_model(tx=float(lpos[0]), ty=float(lpos[1]), tz=float(lpos[2]),
-                               sx=s, sy=s, sz=s)
+                               sx=0.18, sy=0.18, sz=0.18)
                 draw(prog, 0, cube_s, cube_n, mm,
                      use_tex=False, color=lcolor, emissive=True)
 

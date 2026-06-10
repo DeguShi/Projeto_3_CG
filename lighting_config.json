@@ -6,7 +6,7 @@
     0.88
   ],
   "diffuse_mult": 1.0,
-  "specular_mult": 1.0,
+  "specular_mult": 1.6999999999999997,
   "outdoor_offset": [
     0.0,
     3.0,
@@ -27,6 +27,5 @@
     1.15,
     0.75
   ],
-  "sky_brightness": 1.5,
-  "sandbox_marker_scale": 0.14
+  "sky_brightness": 1.5
 }
