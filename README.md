@@ -19,7 +19,11 @@ Também há um modo extra de blackout... Pressione B com cuidado.
 
 
 
-https://github.com/user-attachments/assets/2e79d89f-7bd5-49ad-9f77-2adf44ae2987
+
+
+https://github.com/user-attachments/assets/a5a95433-fb21-44ba-a0d2-a757e6c82cd4
+
+
 
 
 
