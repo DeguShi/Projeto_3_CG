@@ -1,0 +1,32 @@
+{
+  "ambient_strength": 0.35,
+  "ambient_color": [
+    1.0,
+    0.96,
+    0.88
+  ],
+  "diffuse_mult": 1.0,
+  "specular_mult": 1.0,
+  "outdoor_offset": [
+    0.0,
+    3.0,
+    -60.0
+  ],
+  "abajur_pos": [
+    2.4,
+    1.45,
+    2.4
+  ],
+  "ceiling_pos": [
+    0.0,
+    2.59,
+    0.0
+  ],
+  "light_intensities": [
+    1.5,
+    1.15,
+    0.75
+  ],
+  "sky_brightness": 1.5,
+  "sandbox_marker_scale": 0.14
+}

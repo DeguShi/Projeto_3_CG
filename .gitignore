@@ -1,0 +1,6 @@
+docs/CAPABILITIES.md
+docs/SCRATCHPAD.md
+vault
+__pycache__/
+*.pyc
+.venv/
