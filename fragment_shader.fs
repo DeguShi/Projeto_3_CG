@@ -4,11 +4,11 @@ uniform int       use_texture;
 uniform vec4      flat_color;
 
 // Iluminação da cena
-uniform vec3  lightPos[3];
-uniform vec3  lightColor[3];
-uniform float lightIntensity[3];
-uniform int   lightEnabled[3];
-uniform int   lightZone[3];
+uniform vec3  lightPos[4];
+uniform vec3  lightColor[4];
+uniform float lightIntensity[4];
+uniform int   lightEnabled[4];
+uniform int   lightZone[4];
 
 uniform int   objectZone;
 uniform int   ambientEnabled;
@@ -29,13 +29,20 @@ uniform float emissiveMult;
 uniform int   shadowEnabled;
 uniform float shadowBias;
 uniform vec2  shadowTexelSize;
+uniform int   shadowLightIndex;
+uniform int   spotEnabled;
+uniform int   spotIndex;
+uniform vec3  spotDirection;
+uniform float spotInnerCutoff;
+uniform float spotOuterCutoff;
+uniform float spotRange;
 
 varying vec2 out_texture;
 varying vec3 out_fragPos;
 varying vec3 out_normal;
 varying vec4 out_lightSpacePos;
 
-float outdoorShadow(vec3 normal, vec3 lightDir) {
+float shadowAmount(vec3 normal, vec3 lightDir) {
     vec3 proj = out_lightSpacePos.xyz / out_lightSpacePos.w;
     proj = proj * 0.5 + 0.5;
 
@@ -75,21 +82,34 @@ void main() {
     vec3 N = normalize(out_normal);
     vec3 V = normalize(viewPos - out_fragPos);
 
-    for (int i = 0; i < 3; i++) {
-        if (lightEnabled[i] == 1 && (lightZone[i] == objectZone || objectZone == 2)) {
+    for (int i = 0; i < 4; i++) {
+        if (lightEnabled[i] == 1 &&
+            (lightZone[i] == objectZone || lightZone[i] == 2 || objectZone == 2)) {
             vec3  L      = normalize(lightPos[i] - out_fragPos);
             float diff   = max(dot(N, L), 0.0);
+            float factor  = 1.0;
+
+            if (spotEnabled == 1 && i == spotIndex) {
+                vec3 fragDir = normalize(out_fragPos - lightPos[i]);
+                float theta = dot(fragDir, normalize(spotDirection));
+                float cone = clamp((theta - spotOuterCutoff) /
+                                   (spotInnerCutoff - spotOuterCutoff), 0.0, 1.0);
+                float dist = length(lightPos[i] - out_fragPos);
+                float range = clamp(1.0 - dist / spotRange, 0.0, 1.0);
+                factor = cone * range * range;
+            }
+
             vec3  diffuse = diffuseMult * kd * diff
-                            * lightColor[i] * lightIntensity[i] * base_color.rgb;
+                            * lightColor[i] * lightIntensity[i] * factor * base_color.rgb;
 
             vec3  R      = reflect(-L, N);
             float spec   = pow(max(dot(V, R), 0.0), ns);
             vec3  specular = specularMult * ks * spec
-                             * lightColor[i] * lightIntensity[i];
+                             * lightColor[i] * lightIntensity[i] * factor;
 
             float visibility = 1.0;
-            if (i == 0 && shadowEnabled == 1)
-                visibility = 1.0 - outdoorShadow(N, L);
+            if (i == shadowLightIndex && shadowEnabled == 1)
+                visibility = 1.0 - shadowAmount(N, L);
 
             result += visibility * (diffuse + specular);
         }

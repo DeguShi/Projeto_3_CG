@@ -1,0 +1,62 @@
+# Exported from Fuse 1.3.0
+
+newmtl Body
+illum 4
+Kd 1.00 1.00 1.00
+Ka 0.00 0.00 0.00
+Tf 1.00 1.00 1.00
+Ni 1.00
+Ks 1.00 1.00 1.00
+map_Kd zombie girl_Body_diffuse.png
+map_Ks zombie girl_Body_specular.png
+bump zombie girl_Body_normal.png
+map_Ns zombie girl_Body_gloss.png
+
+newmtl Hair
+illum 4
+Kd 1.00 1.00 1.00
+Ka 0.00 0.00 0.00
+Tf 1.00 1.00 1.00
+Ni 1.00
+Ks 1.00 1.00 1.00
+map_Kd zombie girl_Hair_diffuse.png
+map_Ks zombie girl_Hair_specular.png
+bump zombie girl_Hair_normal.png
+map_Ns zombie girl_Hair_gloss.png
+
+newmtl Shoes
+illum 4
+Kd 1.00 1.00 1.00
+Ka 0.00 0.00 0.00
+Tf 1.00 1.00 1.00
+Ni 1.00
+Ks 1.00 1.00 1.00
+map_Kd zombie girl_Shoes_diffuse.png
+map_Ks zombie girl_Shoes_specular.png
+bump zombie girl_Shoes_normal.png
+map_Ns zombie girl_Shoes_gloss.png
+
+newmtl Bottom
+illum 4
+Kd 1.00 1.00 1.00
+Ka 0.00 0.00 0.00
+Tf 1.00 1.00 1.00
+Ni 1.00
+Ks 1.00 1.00 1.00
+map_Kd zombie girl_Bottom_diffuse.png
+map_Ks zombie girl_Bottom_specular.png
+bump zombie girl_Bottom_normal.png
+map_Ns zombie girl_Bottom_gloss.png
+
+newmtl Top
+illum 4
+Kd 1.00 1.00 1.00
+Ka 0.00 0.00 0.00
+Tf 1.00 1.00 1.00
+Ni 1.00
+Ks 1.00 1.00 1.00
+map_Kd zombie girl_Top_diffuse.png
+map_Ks zombie girl_Top_specular.png
+bump zombie girl_Top_normal.png
+map_Ns zombie girl_Top_gloss.png
+

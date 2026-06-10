@@ -13,6 +13,8 @@ Adicionamos também muitos outros objetos. O objetivo não era fazer o mínimo e
 
 O Projeto 3 continua o Projeto 2 e adiciona iluminação ambiente, difusa e especular com três fontes de luz, separação entre ambiente interno e externo, parâmetros de material definidos manualmente e mapa de sombras para a luz externa.
 
+Também há um modo extra de blackout... Pressione B com cuidado.
+
 ## DEMO
 
 
@@ -35,6 +37,8 @@ Também é possível executar o projeto pelo notebook:
 main.ipynb
 ```
 
+> **OBS:** o projeto foi pensado para ser rodado em `.py`. A versão `.ipynb` é meramente uma forma mais clara do código, a ser usada na apresentação.
+
 ## Controles
 
 ### Câmera e cena
@@ -48,6 +52,8 @@ main.ipynb
 - `P`: alternar malha.
 - `F`: alternar tela cheia.
 - `L`: mostrar/esconder marcadores das fontes de luz.
+- `B`: alternar modo apagão com lanterna.
+- `[` e `]`: fechar/abrir o foco da lanterna (4 níveis; mais aberto = mais fraco) — exclusivo do modo apagão.
 - `ESC`: sair.
 
 ### Iluminação (Projeto 3)
@@ -66,7 +72,7 @@ main.ipynb
 main.py                  código principal
 main.ipynb               versão em notebook
 vertex_shader.vs         shader de vértices (Phong — posição + normal)
-fragment_shader.fs       shader de fragmentos (Phong — 3 luzes, zonas, emissivo)
+fragment_shader.fs       shader de fragmentos (Phong — luzes, zonas, emissivo e lanterna)
 requirements.txt         dependências
 assets/                  modelos e texturas usados
 ```

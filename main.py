@@ -28,6 +28,8 @@ Controles:
   P: alternar malha
   F: alternar tela cheia
   L: mostrar/esconder marcadores das fontes de luz
+  B: alternar modo blackout (:D)
+  [ e ]: fechar/abrir o foco da lanterna (4 níveis; mais aberto = mais fraco) (exlcusivo do modo blackout)
   ESC: sair
 
 Iluminação (Projeto 3):
@@ -45,6 +47,7 @@ import ctypes
 import json
 import math
 import os
+import random
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -130,7 +133,10 @@ BOAT_PADDLE_TEX = os.path.join(MODELS, "boat", "paddle_diffuse.jpg")
 HAT_OBJ = os.path.join(MODELS, "hat", "hat.obj")
 HAT_TEX = os.path.join(MODELS, "hat", "hat_diffuse.jpg")
 
-TILE_OBJ = os.path.join(MODELS, "roof_tile", "roof_tile.obj")
+TILE_OBJ    = os.path.join(MODELS, "roof_tile", "roof_tile.obj")
+
+GHOST_OBJ   = os.path.join(MODELS, "ghost", "uploads-files-4149495-obj.obj")
+GHOST_SCALE = 0.0009   # modelo tem ~1994 u de altura; scale → ~1.80 m em cena
 
 WOOD_TEX = os.path.join(TEXTURES, "floor_wood.jpg")
 CEILING_TEX = os.path.join(TEXTURES, "ceiling_wood.jpg")
@@ -150,7 +156,19 @@ SHADOW_ORTHO_HALF = 18.0
 SHADOW_DISTANCE   = 45.0
 SHADOW_NEAR       = 1.0
 SHADOW_FAR        = 90.0
-SHADOW_BIAS       = 0.0035
+SHADOW_BIAS         = 0.0035
+LIGHT_COUNT       = 4
+LANTERN_INDEX     = 3
+LANTERN_NEAR      = 0.08
+LANTERN_FAR       = 24.0
+LANTERN_BASE_INTENSITY = 3.0
+# (inner_deg, outer_deg, intensity_mult) — mais aberto = mais fraco
+_LANTERN_SPREAD_LEVELS: list[tuple] = [
+    ( 6.0, 11.0, 1.6),   # nível 0: foco fechado
+    (11.0, 19.0, 1.0),   # nível 1: normal (padrão)
+    (18.0, 30.0, 0.60),  # nível 2: alargado
+    (28.0, 45.0, 0.30),  # nível 3: difuso
+]
 
 ROOM_SCALE = 1.5
 ROOM_TX    = -3.0
@@ -158,7 +176,9 @@ ROOM_TZ    = 3.0
 ROOM_FLOOR_Y = 0.51
 ROOM_BASE_STRIP_H = 0.12
 ROOM_TY = ROOM_FLOOR_Y - ROOM_BASE_STRIP_H
-ROOM_CEIL_Y = ROOM_TY + 2.4
+ROOM_CEIL_Y    = ROOM_TY + 2.4
+BLACKOUT_CAM_Y    = ROOM_FLOOR_Y + 1.50
+BLACKOUT_PLAYER_R = 0.22   # raio de colisão do jogador em XZ (metros)
 ROOM_DOOR_HINGE_X = 0.061
 ROOM_DOOR_HINGE_Z = -1.664
 ROOM_DOOR_OPEN_DEG = 45.0
@@ -221,8 +241,21 @@ last_frame   = 0.0
 wireframe    = False
 show_light_markers = False
 fullscreen_enabled = False
+blackout_mode = False
+lantern_spread_level: int = 1   # índice em _LANTERN_SPREAD_LEVELS
+_ghost_visible:    bool  = False
+_ghost_show_until: float = -1.0
+_ghost_next_spawn: float = float('inf')   # resetado ao entrar no modo apagão
+_ghost_tx:    float = 0.0
+_ghost_ty:    float = 0.5
+_ghost_tz:    float = 0.0
+_ghost_angle: float = 0.0
 windowed_pos = (100, 100)
 windowed_size = (WIN_W, WIN_H)
+_lantern_rng = random.Random()
+_lantern_next_change = 0.0
+_lantern_target = 1.0
+_lantern_flicker = 1.0
 
 @dataclass
 class MatConfig:
@@ -1075,6 +1108,74 @@ def mat_light_space(light_pos: np.ndarray) -> np.ndarray:
                            SHADOW_NEAR, SHADOW_FAR)
     return np.array(light_proj * light_view)
 
+
+# EXTRA — blackout: simula flcikering aleatória da lanterna 
+def update_lantern_flicker(now: float) -> float:
+    global _lantern_next_change, _lantern_target, _lantern_flicker
+
+    if now >= _lantern_next_change:
+        if _lantern_rng.random() < 0.18:
+            _lantern_target = _lantern_rng.uniform(0.35, 0.68)
+        else:
+            _lantern_target = _lantern_rng.uniform(0.82, 1.12)
+        _lantern_next_change = now + _lantern_rng.uniform(0.04, 0.16)
+
+    mix = min(1.0, max(0.0, delta_time * 12.0))
+    _lantern_flicker += (_lantern_target - _lantern_flicker) * mix
+    return _lantern_flicker
+
+
+# EXTRA — blackout: barreiras físicas nas paredes do quarto e borda da ilha 
+def _in_wall(x: float, z: float) -> bool:
+    """True se a posição (x, z) colide com paredes do quarto ou borda da ilha."""
+    if x * x + z * z > (13.0 - BLACKOUT_PLAYER_R) ** 2:
+        return True
+    R  = BLACKOUT_PLAYER_R
+    HW = 2.925
+    # Cada parede é uma faixa no eixo perpendicular, limitada à extensão do quarto no eixo paralelo.
+    # Assim a colisão só existe onde o modelo de parede realmente existe.
+    if HW - R < x < HW + R and -HW < z < HW:                               # parede leste
+        return True
+    if -HW - R < x < -HW + R and -HW < z < HW and not (-0.2 <= z <= 1.2): # parede oeste (exceto porta)
+        return True
+    if HW - R < z < HW + R and -HW < x < HW:                               # parede norte
+        return True
+    if -HW - R < z < -HW + R and -HW < x < HW:                             # parede sul
+        return True
+    return False
+
+
+# EXTRA — blackout: aparição periódica do fantasma no campo de visão 
+def _ghost_spawn(now: float) -> None:
+    """Escolhe posição visível à câmera (±60° do yaw) e agenda despawn em 3 s."""
+    global _ghost_visible, _ghost_show_until, _ghost_next_spawn
+    global _ghost_tx, _ghost_ty, _ghost_tz, _ghost_angle
+
+    yaw_offset = _lantern_rng.uniform(-60.0, 60.0)
+    rad = math.radians(yaw + yaw_offset)
+    dist = _lantern_rng.uniform(3.0, 9.0)
+    tx = camera_pos.x + math.cos(rad) * dist
+    tz = camera_pos.z + math.sin(rad) * dist
+
+    # Clampa à ilha (raio ~12) e determina altura do chão
+    r = math.sqrt(tx ** 2 + tz ** 2)
+    if r > 12.0:
+        tx, tz = tx / r * 12.0, tz / r * 12.0
+
+    inside_room = (-2.8 <= tx <= 2.8 and -2.8 <= tz <= 2.8)
+    # Pés do ghost
+    ground_y = ROOM_FLOOR_Y if inside_room else 0.0
+    ty = ground_y - 24 * GHOST_SCALE
+
+    # Sempre olha para o centro da ilha (0, 0)
+    _ghost_tx    = tx
+    _ghost_ty    = ty
+    _ghost_tz    = tz
+    _ghost_angle = math.degrees(math.atan2(-tx, -tz))
+    _ghost_visible    = True
+    _ghost_show_until = now + 3.0
+    _ghost_next_spawn = now + _lantern_rng.uniform(15.0, 30.0)
+
 # ---------------------------------------------------------------------------
 # Desenho
 # ---------------------------------------------------------------------------
@@ -1086,10 +1187,16 @@ def create_shadow_map() -> tuple[int, int]:
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
                  SHADOW_SIZE, SHADOW_SIZE, 0,
                  GL_DEPTH_COMPONENT, GL_FLOAT, None)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    # Amostras PCF fora do mapa retornam profundidade máxima → sem sombra falsa
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER)
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR,
+                     np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32))
+    # Garantir modo software: GL_LINEAR na textura de profundidade interpola depths crus
+    # antes da comparação, corrompendo o teste — GL_NONE força leitura direta do canal R.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE)
 
     fbo = glGenFramebuffers(1)
     glBindFramebuffer(GL_FRAMEBUFFER, fbo)
@@ -1170,7 +1277,8 @@ def toggle_fullscreen(window) -> None:
 
 
 def key_event(window, key, scancode, action, mods) -> None:
-    global wireframe, show_light_markers
+    global wireframe, show_light_markers, blackout_mode, lantern_spread_level
+    global _ghost_visible, _ghost_next_spawn, _ghost_show_until
     global camera_pos, yaw, pitch
     global ambient_enabled, light_enabled, ambient_strength, diffuse_mult, specular_mult
 
@@ -1192,12 +1300,27 @@ def key_event(window, key, scancode, action, mods) -> None:
     if key == glfw.KEY_L and action == glfw.PRESS:
         show_light_markers = not show_light_markers
 
+    if key == glfw.KEY_B and action == glfw.PRESS:
+        blackout_mode = not blackout_mode
+        if blackout_mode:
+            camera_pos.y = BLACKOUT_CAM_Y
+            t = glfw.get_time()
+            _ghost_next_spawn = t + _lantern_rng.uniform(15.0, 30.0)
+            _ghost_visible    = False
+            _ghost_show_until = -1.0
+        else:
+            _ghost_visible = False
+
     # Liga e desliga as luzes.
     if action == glfw.PRESS:
         if key == glfw.KEY_1: ambient_enabled        = 1 - ambient_enabled
         if key == glfw.KEY_2: light_enabled[0]       = 1 - light_enabled[0]
         if key == glfw.KEY_3: light_enabled[1]       = 1 - light_enabled[1]
         if key == glfw.KEY_4: light_enabled[2]       = 1 - light_enabled[2]
+        if key == glfw.KEY_LEFT_BRACKET:
+            lantern_spread_level = max(0, lantern_spread_level - 1)
+        if key == glfw.KEY_RIGHT_BRACKET:
+            lantern_spread_level = min(len(_LANTERN_SPREAD_LEVELS) - 1, lantern_spread_level + 1)
 
     # Ajustes contínuos de intensidade.
     if repeat:
@@ -1216,9 +1339,18 @@ def key_event(window, key, scancode, action, mods) -> None:
         if key == glfw.KEY_S: new_pos -= spd * camera_front
         if key == glfw.KEY_A: new_pos -= glm.normalize(glm.cross(camera_front, camera_up)) * spd
         if key == glfw.KEY_D: new_pos += glm.normalize(glm.cross(camera_front, camera_up)) * spd
-        camera_pos.x = max(-SKYBOX_HALF+1, min(SKYBOX_HALF-1, new_pos.x))
-        camera_pos.y = max(0.3, min(8.0, new_pos.y))
-        camera_pos.z = max(-SKYBOX_HALF+1, min(SKYBOX_HALF-1, new_pos.z))
+        if blackout_mode:
+            nx = max(-SKYBOX_HALF + 1, min(SKYBOX_HALF - 1, new_pos.x))
+            if not _in_wall(nx, camera_pos.z):
+                camera_pos.x = nx
+            camera_pos.y = BLACKOUT_CAM_Y
+            nz = max(-SKYBOX_HALF + 1, min(SKYBOX_HALF - 1, new_pos.z))
+            if not _in_wall(camera_pos.x, nz):
+                camera_pos.z = nz
+        else:
+            camera_pos.x = max(-SKYBOX_HALF + 1, min(SKYBOX_HALF - 1, new_pos.x))
+            camera_pos.y = max(0.3, min(8.0, new_pos.y))
+            camera_pos.z = max(-SKYBOX_HALF + 1, min(SKYBOX_HALF - 1, new_pos.z))
 
         umbrella = objects[UMBRELLA_INDEX]
         indoor_chair = objects[INDOOR_CHAIR_INDEX]
@@ -1333,6 +1465,7 @@ def compile_program(vs_path: str, fs_path: str) -> int:
 
 def main() -> None:
     global delta_time, last_frame
+    global _ghost_visible, _ghost_next_spawn, _ghost_show_until
 
     load_lighting_config()
 
@@ -1375,6 +1508,12 @@ def main() -> None:
             obj.parts = load_obj_multi(obj.obj_path, obj.mat_configs)
         else:
             obj.start, obj.count, obj.tex_id = load_obj(obj.obj_path, obj.tex_path)
+
+    print("  Fantasma", flush=True)
+    _GHOST_MATS: dict[str, MatConfig] = {
+        "default": MatConfig(color=(0.15, 0.17, 0.22, 0.9)),
+    }
+    ghost_parts = load_obj_multi(GHOST_OBJ, _GHOST_MATS)
 
     print("  Quarto", flush=True)
     _ROOM_MATS: dict[str, MatConfig] = {
@@ -1458,14 +1597,22 @@ def main() -> None:
     loc_shadow_enabled = glGetUniformLocation(prog, "shadowEnabled")
     loc_shadow_bias    = glGetUniformLocation(prog, "shadowBias")
     loc_shadow_texel   = glGetUniformLocation(prog, "shadowTexelSize")
+    loc_shadow_index   = glGetUniformLocation(prog, "shadowLightIndex")
+    loc_spot_enabled   = glGetUniformLocation(prog, "spotEnabled")
+    loc_spot_index     = glGetUniformLocation(prog, "spotIndex")
+    loc_spot_direction = glGetUniformLocation(prog, "spotDirection")
+    loc_spot_inner     = glGetUniformLocation(prog, "spotInnerCutoff")
+    loc_spot_outer     = glGetUniformLocation(prog, "spotOuterCutoff")
+    loc_spot_range     = glGetUniformLocation(prog, "spotRange")
     loc_depth_light_space = glGetUniformLocation(depth_prog, "lightSpaceMatrix")
 
     _light_colors = np.array([
         [1.00, 0.45, 0.05],   # luz externa
         [1.00, 0.85, 0.45],   # abajur
         [0.80, 0.90, 1.00],   # teto
+        [1.00, 0.92, 0.72],   # lanterna
     ], dtype=np.float32)
-    _light_zones = np.array([OUTDOOR, INDOOR, INDOOR], dtype=np.int32)
+    _light_zones = np.array([OUTDOOR, INDOOR, INDOOR, BOUNDARY], dtype=np.int32)
     _marker_colors = [
         (1.00, 0.80, 0.35, 1.0),
         (1.00, 0.85, 0.45, 1.0),
@@ -1507,7 +1654,7 @@ def main() -> None:
 
     glfw.show_window(window)
     print("Cena pronta", flush=True)
-    print("Iluminação: 1=ambient 2=luz-ext 3=abajur 4=teto | J/K=ambient N/M=difuso U/I=especular | F=tela-cheia L=fontes", flush=True)
+    print("Iluminação: 1=ambient 2=luz-ext 3=abajur 4=teto | J/K=ambient N/M=difuso U/I=especular | F=tela-cheia L=fontes B=apagão", flush=True)
 
     while not glfw.window_should_close(window):
         now        = glfw.get_time()
@@ -1515,8 +1662,11 @@ def main() -> None:
         last_frame = now
 
         glfw.poll_events()
+        if blackout_mode:
+            glClearColor(0.0, 0.0, 0.0, 1.0)
+        else:
+            glClearColor(0.52, 0.80, 0.98, 1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glClearColor(0.52, 0.80, 0.98, 1.0)
 
         fb_w, fb_h = glfw.get_framebuffer_size(window)
         view = mat_view()
@@ -1528,13 +1678,40 @@ def main() -> None:
         outdoor_lpos = np.array([bc.tx + outdoor_offset[0],
                                   bc.ty + outdoor_offset[1],
                                   bc.tz + outdoor_offset[2]], dtype=np.float32)
+        lantern_pos = glm.vec3(camera_pos + camera_front * 0.18)
 
         light_positions = np.array([
             outdoor_lpos,
             abajur_pos,
             ceiling_pos,
+            [lantern_pos.x, lantern_pos.y, lantern_pos.z],
         ], dtype=np.float32)
-        light_space = mat_light_space(outdoor_lpos)
+        lantern_flicker = update_lantern_flicker(now) if blackout_mode else 1.0
+        _inner_deg, _outer_deg, _int_mult = _LANTERN_SPREAD_LEVELS[lantern_spread_level]
+        if blackout_mode:
+            camera_pos.y = BLACKOUT_CAM_Y
+            light_space = mat_light_space(outdoor_lpos)
+            active_light_enabled = np.array([0, 0, 0, 1], dtype=np.int32)
+            active_light_intensities = np.array(
+                [0.0, 0.0, 0.0, LANTERN_BASE_INTENSITY * _int_mult * lantern_flicker],
+                dtype=np.float32,
+            )
+            active_ambient_enabled = 0
+            active_shadow_index = 0
+            # Fantasma: despawn ou novo spawn
+            if _ghost_visible and now > _ghost_show_until:
+                _ghost_visible = False
+            elif not _ghost_visible and now >= _ghost_next_spawn:
+                _ghost_spawn(now)
+        else:
+            light_space = mat_light_space(outdoor_lpos)
+            active_light_enabled = np.array([*light_enabled, 0], dtype=np.int32)
+            active_light_intensities = np.array(
+                [*light_intensities_cfg, 0.0],
+                dtype=np.float32,
+            )
+            active_ambient_enabled = ambient_enabled
+            active_shadow_index = 0
 
         glUseProgram(depth_prog)
         glUniformMatrix4fv(loc_depth_light_space, 1, GL_TRUE, light_space)
@@ -1554,31 +1731,39 @@ def main() -> None:
         glUniformMatrix4fv(loc_view, 1, GL_TRUE, view)
         glUniformMatrix4fv(loc_proj, 1, GL_TRUE, proj)
 
-        glUniform3fv(loc_light_pos,       3, light_positions.flatten())
-        glUniform3fv(loc_light_color,     3, _light_colors.flatten())
-        glUniform1fv(loc_light_intensity, 3, np.array(light_intensities_cfg, dtype=np.float32))
-        glUniform1iv(loc_light_enabled,   3, np.array(light_enabled, dtype=np.int32))
-        glUniform1iv(loc_light_zone,      3, _light_zones)
-        glUniform1i(loc_ambient_en,    ambient_enabled)
+        glUniform3fv(loc_light_pos,       LIGHT_COUNT, light_positions.flatten())
+        glUniform3fv(loc_light_color,     LIGHT_COUNT, _light_colors.flatten())
+        glUniform1fv(loc_light_intensity, LIGHT_COUNT, active_light_intensities)
+        glUniform1iv(loc_light_enabled,   LIGHT_COUNT, active_light_enabled)
+        glUniform1iv(loc_light_zone,      LIGHT_COUNT, _light_zones)
+        glUniform1i(loc_ambient_en,    active_ambient_enabled)
         glUniform1f(loc_ambient_str,   ambient_strength)
         glUniform1f(loc_diffuse_mult,  diffuse_mult)
         glUniform1f(loc_specular_mult, specular_mult)
         glUniform3f(loc_view_pos, camera_pos.x, camera_pos.y, camera_pos.z)
         glUniform3f(loc_ambient_color, *ambient_color)
         glUniformMatrix4fv(loc_light_space, 1, GL_TRUE, light_space)
-        glUniform1i(loc_shadow_enabled, 1)
+        glUniform1i(loc_shadow_enabled, 0 if blackout_mode else 1)
+        glUniform1i(loc_shadow_index, active_shadow_index)
         glUniform1f(loc_shadow_bias, SHADOW_BIAS)
         glUniform2f(loc_shadow_texel, 1.0 / SHADOW_SIZE, 1.0 / SHADOW_SIZE)
+        glUniform1i(loc_spot_enabled, 1 if blackout_mode else 0)
+        glUniform1i(loc_spot_index, LANTERN_INDEX)
+        glUniform3f(loc_spot_direction, camera_front.x, camera_front.y, camera_front.z)
+        glUniform1f(loc_spot_inner, math.cos(math.radians(_inner_deg)))
+        glUniform1f(loc_spot_outer, math.cos(math.radians(_outer_deg)))
+        glUniform1f(loc_spot_range, LANTERN_FAR)
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D, shadow_tex)
         glActiveTexture(GL_TEXTURE0)
 
         # Céu
-        glDepthMask(GL_FALSE)
-        sky_m = mat_model(tx=camera_pos.x, ty=camera_pos.y, tz=camera_pos.z)
-        draw(prog, sky_tid, sky_start, sky_count, sky_m,
-             emissive=True, emissive_mult=sky_brightness)
-        glDepthMask(GL_TRUE)
+        if not blackout_mode:
+            glDepthMask(GL_FALSE)
+            sky_m = mat_model(tx=camera_pos.x, ty=camera_pos.y, tz=camera_pos.z)
+            draw(prog, sky_tid, sky_start, sky_count, sky_m,
+                 emissive=True, emissive_mult=sky_brightness)
+            glDepthMask(GL_TRUE)
 
         # Terreno externo
         draw(prog, water_tid, water_s, water_n, mat_model(),
@@ -1636,7 +1821,16 @@ def main() -> None:
                 draw(prog, obj.tex_id, obj.start, obj.count, m,
                      use_tex=True, **mat_kw)
 
-        if show_light_markers:
+        if blackout_mode and _ghost_visible:
+            s = GHOST_SCALE
+            gm = mat_model(tx=_ghost_tx, ty=_ghost_ty, tz=_ghost_tz,
+                           angle_y=_ghost_angle, sx=s, sy=s, sz=s)
+            for pstart, pcount, ptex_id, puse_tex, pcolor, _ds in ghost_parts:
+                draw(prog, ptex_id, pstart, pcount, gm,
+                     use_tex=puse_tex, color=pcolor,
+                     zone=BOUNDARY, ka=0.20, kd=0.80, ks=0.05, shininess=8.0)
+
+        if show_light_markers and not blackout_mode:
             marker_positions = [
                 outdoor_lpos,
                 np.array(abajur_pos, dtype=np.float32),
