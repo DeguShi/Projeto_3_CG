@@ -11,7 +11,7 @@ Claro, dadas as limitações do projeto e a baixa diversidade de modelos gratuit
 
 Adicionamos também muitos outros objetos. O objetivo não era fazer o mínimo entregavel, mas sim construir um ambiente coerente e que fosse interessante de explorar.
 
-[Projeto 2](https://github.com/DeguShi/Projeto_2_CG) e adiciona iluminação ambiente, difusa e especular com três fontes de luz, separação entre ambiente interno e externo, parâmetros de material definidos manualmente e mapa de sombras para a luz externa.
+O Projeto 3 continua o [Projeto 2](https://github.com/DeguShi/Projeto_2_CG) e adiciona iluminação ambiente, difusa e especular com três fontes de luz, separação entre ambiente interno e externo, parâmetros de material definidos manualmente e mapa de sombras para a luz externa.
 
 Também há um modo extra de blackout... Pressione B com cuidado.
 
