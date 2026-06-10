@@ -18,7 +18,8 @@ Também há um modo extra de blackout... Pressione B com cuidado.
 ## DEMO
 
 
-https://github.com/user-attachments/assets/f83ce9dd-c1e8-41dd-8cf0-2c775e32d436
+
+https://github.com/user-attachments/assets/2e79d89f-7bd5-49ad-9f77-2adf44ae2987
 
 
 
@@ -45,15 +46,15 @@ main.ipynb
 - `WASD` e mouse: mover a câmera.
 - `Shift + WASD`: mover a câmera mais rápido.
 - `Shift + qualquer comando de alteração nos objetos`: acelerar o movimento.
-- `Setas`: mover a cadeira de praia (a luz externa segue junto).
+- `Setas`: mover a cadeira de praia.
 - `Q` e `E`: girar a cadeira interna.
 - `Z` e `X`: mudar o tamanho do guarda-sol.
 - `Scroll`: mudar o zoom.
 - `P`: alternar malha.
 - `F`: alternar tela cheia.
 - `L`: mostrar/esconder marcadores das fontes de luz.
-- `B`: alternar modo apagão com lanterna.
-- `[` e `]`: fechar/abrir o foco da lanterna (4 níveis; mais aberto = mais fraco) — exclusivo do modo apagão.
+- `B`: alternar modo blackout e normal
+- `[` e `]`: fechar/abrir o foco da lanterna (4 níveis; mais aberto = mais fraco) — exclusivo do modo blackout.
 - `ESC`: sair.
 
 ### Iluminação (Projeto 3)
@@ -71,8 +72,8 @@ main.ipynb
 ```text
 main.py                  código principal
 main.ipynb               versão em notebook
-vertex_shader.vs         shader de vértices (Phong — posição + normal)
-fragment_shader.fs       shader de fragmentos (Phong — luzes, zonas, emissivo e lanterna)
+vertex_shader.vs         shader de vértices (posição + normal)
+fragment_shader.fs       shader de fragmentos (luzes, zonas, emissivo e lanterna)
 requirements.txt         dependências
 assets/                  modelos e texturas usados
 ```
@@ -81,7 +82,7 @@ assets/                  modelos e texturas usados
 
 | Luz | Zona    | Cor               | Posição                              |
 |-----|---------|-------------------|--------------------------------------|
-| 2   | Externa | amarelo-laranja   | acima da cadeira de praia (segue ela) |
+| 2   | Externa | amarelo-laranja   | acima do mar, simulando um por do sol |
 | 3   | Interna | laranja-quente    | acima do abajur                      |
 | 4   | Interna | branco-azulado    | centro do teto                       |
 
@@ -94,5 +95,3 @@ Modelos internos: cama, tapete, escrivaninha, abajur, laptop, travesseiros, PC, 
 Modelos externos: guarda-sol, mesa redonda, cadeira de praia, garrafa, poco e barco.
 
 O quarto separa o ambiente interno do ambiente externo.
-
-As telhas ficam no teto como detalhe externo, mas não entram na contagem mínima porque esse modelo não veio com textura de imagem.
