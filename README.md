@@ -63,7 +63,7 @@ main.ipynb
 
 ### Iluminação (Projeto 3)
 - `1`: ligar/desligar luz ambiente global.
-- `2`: ligar/desligar luz externa (segue a cadeira de praia).
+- `2`: ligar/desligar luz externa.
 - `3`: ligar/desligar abajur (luz interna quente).
 - `4`: ligar/desligar luz de teto (luz interna fria).
 - `J` / `K`: diminuir / aumentar intensidade da luz ambiente.
